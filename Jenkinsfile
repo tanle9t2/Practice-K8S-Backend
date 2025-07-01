@@ -6,7 +6,7 @@ pipeline {
         SCANNER_HOME = tool 'sonar-scanner'
         IMAGE_NAME = "tanle92/backend"
         BRANCH = "main"
-        REPO = 'https://github.com/tanle9t2/Practice-K8s.git'
+        REPO = 'https://github.com/tanle9t2/Practice-K8S-Backend.git'
     }
 
     stages {
@@ -45,7 +45,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} springboot-backend/"
+                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
                 }
             }
         }

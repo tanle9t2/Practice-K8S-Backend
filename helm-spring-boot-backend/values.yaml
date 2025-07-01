@@ -1,0 +1,15 @@
+appName: spring-boot-backend
+image:
+  name: tanle92/backend
+  tag: v1.0.0
+
+nameSpace: dev
+
+service:
+  port: 8888
+  targetPort: 8080
+
+replicas: 1
+
+frontend:
+  origin: http://localhost:30300

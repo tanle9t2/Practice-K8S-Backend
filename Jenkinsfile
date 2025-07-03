@@ -1,12 +1,15 @@
 pipeline {
     agent any
+    tools {
 
+    }
     environment {
         CI = true
         SCANNER_HOME = tool 'sonar-scanner'
         IMAGE_NAME = "tanle92/backend"
         BRANCH = "main"
         REPO = 'https://github.com/tanle9t2/Practice-K8S-Backend.git'
+        REPO_CONFIG = 'https://github.com/tanle9t2/Practice-K8S-Backend-Config.git'
     }
 
     stages {
@@ -15,13 +18,7 @@ pipeline {
                 git branch: env.BRANCH, url: env.REPO
             }
         }
-        stage("OWASP Scan") {
-            steps {
-                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'DP'
-                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            }
-        }
-        stage("Sonarqube Check"){
+        stage("Sonarqube Check") {
             steps {
                 withSonarQubeEnv('sonar-server') {
                     sh '''
@@ -32,7 +29,22 @@ pipeline {
                 }
             }
         }
-
+        stage('Detect Changes') {
+            steps {
+                script {
+                    def changedFiles = sh(
+                            script: "git diff --name-only HEAD~1 HEAD",
+                            returnStdout: true
+                    ).trim()
+                    if (changedFiles.readLines().any { it.startsWith('src/') }) {
+                        env.RUN_PIPELINE = "true"
+                    } else {
+                        env.RUN_PIPELINE = "false"
+                    }
+                    echo "Different: ${RUN_PIPELINE}"
+                }
+            }
+        }
         stage('Set Commit-Based Tag') {
             steps {
                 script {
@@ -45,17 +57,53 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                    if (env.RUN_PIPELINE) {
+                        sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                    }
                 }
             }
         }
         stage('Push to Docker Hub') {
             steps {
                 withDockerRegistry(credentialsId: 'dockerhub', url: 'https://index.docker.io/v1/') {
-                    sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                    script {
+                        if (env.RUN_PIPELINE) {
+                            sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                        }
+                    }
                 }
 
 
+            }
+        }
+
+
+        stage("Update Manifest") {
+            steps {
+                script {
+                    if (env.RUN_PIPELINE) {
+                        echo 'Updating K8s Manifest'
+                        sshagent(credentials: ['github-ssh-key']) {
+                            sh '''
+                                rm -rf Practice-K8S-Backend-Config
+
+                                git config --global user.name "tanle9t2"
+                                git config --global user.email "fcletan12@gmail.com"
+        
+                                mkdir -p ~/.ssh
+                                ssh-keyscan github.com >> ~/.ssh/known_hosts
+        
+                                git clone git@github.com:tanle9t2/Practice-K8S-Backend-Config.git
+        
+                                cd Practice-K8S-Backend-Config
+                                sed -i "s|tag: .*|tag: ${IMAGE_TAG}|" helm/values.yaml
+                                git add helm/values.yaml
+                                git commit -m "Update image tag to ${IMAGE_TAG}" || true
+                                git push origin main
+                            '''
+                        }
+                    }
+                }
             }
         }
     }
